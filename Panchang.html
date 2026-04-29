@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<title>Auto Panchang Ticker</title>
+
+<style>
+  body {
+    margin: 0;
+    background: transparent;
+    font-family: Arial, sans-serif;
+  }
+
+  .ticker {
+    width: 100%;
+    background: #000;
+    color: #fff;
+    font-size: 46px;
+    font-weight: 900;
+    padding: 8px 15px;
+    border-bottom: 4px solid red;
+    text-align: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+
+  .yellow {
+    color: #ffd400;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="ticker" id="panchangText">Loading Panchang...</div>
+
+<script>
+const API_KEY = "VZAYVkj16r5U6G9PPDREG6oPbkTNRxaH2SDuLSZZ";
+
+// अपनी location डाल सकते हो
+const LATITUDE = 23.1765;
+const LONGITUDE = 75.7885;
+const TIMEZONE = 5.5;
+
+// 30 मिनट = 48 calls/day
+const CALL_INTERVAL = 30 * 60 * 1000;
+const MAX_CALLS_PER_DAY = 48;
+
+const hindiDays = [
+  "रविवार", "सोमवार", "मंगलवार", "बुधवार",
+  "गुरुवार", "शुक्रवार", "शनिवार"
+];
+
+const hindiMonths = [
+  "जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून",
+  "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"
+];
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function formatHindiDate() {
+  const d = new Date();
+  return `${d.getDate()} ${hindiMonths[d.getMonth()]}, ${d.getFullYear()}`;
+}
+
+function getHindiDay() {
+  return hindiDays[new Date().getDay()];
+}
+
+function getCallCountKey() {
+  return "panchang_api_calls_" + todayKey();
+}
+
+function getLastCallTimeKey() {
+  return "panchang_last_call_time_" + todayKey();
+}
+
+function getSavedTextKey() {
+  return "panchang_saved_text_" + todayKey();
+}
+
+function showSavedOrDefault() {
+  const saved = localStorage.getItem(getSavedTextKey());
+  document.getElementById("panchangText").innerHTML =
+    saved || `${formatHindiDate()} <span class="yellow">${getHindiDay()}</span> पंचांग लोड हो रहा है`;
+}
+
+function canCallApi() {
+  const count = Number(localStorage.getItem(getCallCountKey()) || 0);
+  const lastCall = Number(localStorage.getItem(getLastCallTimeKey()) || 0);
+  const now = Date.now();
+
+  if (count >= MAX_CALLS_PER_DAY) return false;
+  if (lastCall && now - lastCall < CALL_INTERVAL) return false;
+
+  return true;
+}
+
+function increaseCallCount() {
+  const count = Number(localStorage.getItem(getCallCountKey()) || 0);
+  localStorage.setItem(getCallCountKey(), count + 1);
+  localStorage.setItem(getLastCallTimeKey(), Date.now());
+}
+
+function normalizeTithiName(name) {
+  if (!name) return "";
+  return name
+    .replace("Pratipada", "प्रतिपदा")
+    .replace("Dwitiya", "द्वितीया")
+    .replace("Tritiya", "तृतीया")
+    .replace("Chaturthi", "चतुर्थी")
+    .replace("Panchami", "पंचमी")
+    .replace("Shashthi", "षष्ठी")
+    .replace("Saptami", "सप्तमी")
+    .replace("Ashtami", "अष्टमी")
+    .replace("Navami", "नवमी")
+    .replace("Dashami", "दशमी")
+    .replace("Ekadashi", "एकादशी")
+    .replace("Dwadashi", "द्वादशी")
+    .replace("Trayodashi", "त्रयोदशी")
+    .replace("Chaturdashi", "चतुर्दशी")
+    .replace("Purnima", "पूर्णिमा")
+    .replace("Amavasya", "अमावस्या");
+}
+
+function normalizePaksha(name) {
+  if (!name) return "";
+  return name
+    .replace("Shukla", "शुक्ल")
+    .replace("Krishna", "कृष्ण");
+}
+
+async function loadPanchang() {
+  showSavedOrDefault();
+
+  if (!canCallApi()) {
+    return;
+  }
+
+  const d = new Date();
+
+  try {
+    increaseCallCount();
+
+    const response = await fetch("https://json.freeastrologyapi.com/tithi", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY
+      },
+      body: JSON.stringify({
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
+        date: d.getDate(),
+        hours: d.getHours(),
+        minutes: d.getMinutes(),
+        seconds: d.getSeconds(),
+        latitude: LATITUDE,
+        longitude: LONGITUDE,
+        timezone: TIMEZONE,
+        config: {
+          observation_point: "topocentric",
+          ayanamsha: "lahiri"
+        }
+      })
+    });
+
+    const data = await response.json();
+
+    const rawTithi =
+      data?.tithi_details?.tithi_name ||
+      data?.tithi?.name ||
+      data?.name ||
+      "";
+
+    const rawPaksha =
+      data?.tithi_details?.paksha ||
+      data?.tithi?.paksha ||
+      data?.paksha ||
+      "";
+
+    const tithi = normalizeTithiName(rawTithi);
+    const paksha = normalizePaksha(rawPaksha);
+
+    const finalText =
+      `${formatHindiDate()} <span class="yellow">${getHindiDay()}</span> ${paksha} पक्ष ${tithi} तिथि`;
+
+    localStorage.setItem(getSavedTextKey(), finalText);
+    document.getElementById("panchangText").innerHTML = finalText;
+
+  } catch (error) {
+    showSavedOrDefault();
+  }
+}
+
+loadPanchang();
+setInterval(loadPanchang, 60 * 1000);
+</script>
+
+</body>
+</html>
